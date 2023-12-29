@@ -1,31 +1,22 @@
 ﻿using System;
-using System.Threading.Tasks;
 using System.Net.Http;
 using System.Net;
-using System.IO;
 using System.Collections.Generic;
 using OptionChainMonitor.Model;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace OptionChainMonitor.Service
 {
     public class NSEOptionChainReader
     {
-        public List<OptionChain> ReadOptionChain()
+        public List<string> Cookie { get; set; }
+        public async Task<List<OptionChain>> GetOptionChainAsync(DateTime snapshotTime)
         {
-            HttpClientHandler handler = new HttpClientHandler();
-            handler.AutomaticDecompression = System.Net.DecompressionMethods.GZip | DecompressionMethods.Deflate;
+            HttpResponseMessage responseMessage = await RequestOptionChainAsync();
 
-            System.Net.Http.HttpClient client = new System.Net.Http.HttpClient(handler);
-
-            System.Net.Http.HttpRequestMessage requestMessage = new System.Net.Http.HttpRequestMessage();
-            requestMessage.RequestUri = new Uri("https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY");
-
-            requestMessage.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
-
-            var responseMessage = client.SendAsync(requestMessage).Result;
+            var optionList = new List<OptionChain>();
 
             if (responseMessage.IsSuccessStatusCode)
             {
@@ -38,30 +29,77 @@ namespace OptionChainMonitor.Service
 
                 foreach (var item in optionsList)
                 {
-                    var option = new OptionChain();
+                    var option = new OptionChain() { SnapshotTime = snapshotTime };
 
                     foreach (var prop in item)
                     {
-                        switch (prop.Name)
-                        {
-                            case "PE":
-                                var c =  prop.Value.Children();
-                                //double.TryParse(prop.Value.Children()., out var ask);
-                                //option.PutAskPrice = ask;
-                                break;
-                            case "CE":
-                                break;
-                        }
+                        PopulateOptionChain(option, prop);
                     }
 
-                    optionChain.Add(option);
+                    optionList.Add(option);
                 }
 
-                return optionChain;
             }
 
-            return new List<OptionChain>();
+            return optionList;
         }
 
+        private async Task<HttpResponseMessage> RequestOptionChainAsync()
+        {
+            HttpClientHandler handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+            };
+
+            HttpClient client = new HttpClient(handler);
+            client.Timeout = TimeSpan.FromMinutes(1);
+
+            HttpRequestMessage requestMessage = new HttpRequestMessage
+            {
+                RequestUri = new Uri("https://www.nseindia.com/api/option-chain-indices?symbol=NIFTY")
+            };
+
+            requestMessage.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
+            requestMessage.Headers.TryAddWithoutValidation("Connection", "keep-alive");
+
+            if (Cookie!=null && Cookie.Any())
+                requestMessage.Headers.TryAddWithoutValidation("Cookie", string.Concat("AKA_A2=A;", string.Join(";", Cookie)));
+
+            var responseMessage = await client.SendAsync(requestMessage);
+
+            if(responseMessage.StatusCode == HttpStatusCode.OK)
+            {
+                var setCookieHeader = responseMessage.Headers.GetValues("set-cookie").ToList();
+                Cookie = setCookieHeader.Select(c => c.Split(';').First()).ToList();
+            }
+
+            return responseMessage;
+        }
+
+
+        private static void PopulateOptionChain(OptionChain option, JProperty prop)
+        {
+            switch (prop.Name)
+            {
+                case "strikePrice": option.StrikePrice = prop.Value.ToObject<double>();
+                    break;
+                case "PE":
+                    var c = prop.Value.Children().OfType<JProperty>();
+                    option.PutAskPrice = c.FirstOrDefault(p => p.Name == "askPrice").Value.ToObject<double>();
+                    option.PutBidprice = c.FirstOrDefault(p => p.Name == "bidprice").Value.ToObject<double>();
+                    option.PutLastPrice = c.FirstOrDefault(p => p.Name == "lastPrice").Value.ToObject<double>();
+                    option.PutOpenInterest = c.FirstOrDefault(p => p.Name == "openInterest").Value.ToObject<double>();
+                    option.PutTotalTradedVolume = c.FirstOrDefault(p => p.Name == "totalTradedVolume").Value.ToObject<double>();
+                    break;
+                case "CE":
+                    c = prop.Value.Children().OfType<JProperty>();
+                    option.CallAskPrice = c.FirstOrDefault(p => p.Name == "askPrice").Value.ToObject<double>();
+                    option.CallBidprice = c.FirstOrDefault(p => p.Name == "bidprice").Value.ToObject<double>();
+                    option.CallLastPrice = c.FirstOrDefault(p => p.Name == "lastPrice").Value.ToObject<double>();
+                    option.CallOpenInterest = c.FirstOrDefault(p => p.Name == "openInterest").Value.ToObject<double>();
+                    option.CallTotalTradedVolume = c.FirstOrDefault(p => p.Name == "totalTradedVolume").Value.ToObject<double>();
+                    break;
+            }
+        }
     }
 }

@@ -7,6 +7,18 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
     <Grid>
-        <DataGrid ItemsSource="{Binding OptionChainCollection}"></DataGrid>
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"></RowDefinition>
+            <RowDefinition></RowDefinition>
+        </Grid.RowDefinitions>
+        
+
+        <StackPanel Orientation="Horizontal" Margin="5">
+            <Label Name="SnapshotTime" Content="Snapshot Time"/>
+            <ComboBox Width="150" ItemsSource="{Binding SnapshotCollection}" SelectedItem="{Binding SelectedTimeStamp}"/>
+        </StackPanel>   
+
+        <DataGrid Margin="5" Grid.Row="1" ItemsSource="{Binding SnapshotOptionsCollection}"/>
     </Grid>
 </Window>
